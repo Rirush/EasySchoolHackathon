@@ -116,6 +116,7 @@ type Profile struct {
 	FirstName string
 	LastName string
 	Age int
+	Bio string
 	Pictures []PictureID
 	Tags []string
 }
@@ -136,6 +137,7 @@ func GetMyProfile(ctx *gin.Context) {
 			FirstName: profile.FirstName,
 			LastName: profile.LastName,
 			Age: age,
+			Bio: profile.Bio,
 			Pictures: []PictureID{},
 			Tags: []string{},
 		}
@@ -178,6 +180,7 @@ type ProfileUpdate struct {
 	FirstName string
 	LastName string
 	BirthDate string
+	Bio string
 }
 
 func PostProfile(ctx *gin.Context) {
@@ -200,6 +203,7 @@ func PostProfile(ctx *gin.Context) {
 		profile.FirstName = form.FirstName
 		profile.LastName = form.LastName
 		profile.BirthDate = form.BirthDate
+		profile.Bio = form.Bio
 		err = profile.Update()
 		if err != nil {
 			log.Println("Failed to update profile in database:", err)
@@ -213,6 +217,7 @@ func PostProfile(ctx *gin.Context) {
 			FirstName: form.FirstName,
 			LastName: form.LastName,
 			BirthDate: form.BirthDate,
+			Bio: form.Bio,
 		}
 		err := profile.Insert()
 		if err != nil {

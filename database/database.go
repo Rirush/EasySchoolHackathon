@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS profiles (
  	user text unique references credentials not null,
  	first_name text not null,
  	last_name text not null,
- 	birth_date text not null
+ 	birth_date text not null,
+ 	bio text not null
 );
 
 CREATE TABLE IF NOT EXISTS profile_pictures (
@@ -101,15 +102,16 @@ type Profile struct {
 	FirstName string `db:"first_name"`
 	LastName string `db:"last_name"`
 	BirthDate string `db:"birth_date"`// DD.MM.YYYY
+	Bio string
 }
 
 func (p *Profile) Insert() error {
-	_, err := db.NamedExec("INSERT INTO profiles VALUES (:user, :first_name, :last_name, :birth_date)", *p)
+	_, err := db.NamedExec("INSERT INTO profiles VALUES (:user, :first_name, :last_name, :birth_date, :bio)", *p)
 	return err
 }
 
 func (p *Profile) Update() error {
-	_, err := db.NamedExec("UPDATE profiles SET first_name = :first_name, last_name = :last_name, birth_date = :birth_date WHERE user = :user", *p)
+	_, err := db.NamedExec("UPDATE profiles SET first_name = :first_name, last_name = :last_name, birth_date = :birth_date, bio = :bio WHERE user = :user", *p)
 	return err
 }
 
