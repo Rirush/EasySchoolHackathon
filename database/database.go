@@ -232,6 +232,25 @@ func SetTagsForUser(user uuid.UUID, tags []string) error {
 	return err
 }
 
+func FindUsersForTag(tag string) ([]uuid.UUID, error) {
+	rows, err := db.Queryx("SELECT DISTINCT(user) FROM tags WHERE tag = ?", tag)
+	if err == sql.ErrNoRows {
+		return []uuid.UUID{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var result []uuid.UUID
+	for rows.Next() {
+		user := uuid.UUID{}
+		err = rows.Scan(&user)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, user)
+	}
+	return result, nil
+}
+
 func LoadDatabase(path string) error {
 	var err error
 	db, err = sqlx.Connect("sqlite3", fmt.Sprintf("file:%s?_journal=WAL", path))

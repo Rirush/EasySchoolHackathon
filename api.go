@@ -113,6 +113,7 @@ type PictureID struct {
 }
 
 type Profile struct {
+	ID uuid.UUID
 	FirstName string
 	LastName string
 	Age int
@@ -134,6 +135,7 @@ func GetMyProfile(ctx *gin.Context) {
 		}
 
 		resultProfile := Profile{
+			ID: profile.User,
 			FirstName: profile.FirstName,
 			LastName: profile.LastName,
 			Age: age,
@@ -383,12 +385,128 @@ func SetImageAsPrimary(ctx *gin.Context) {
 	ctx.Status(http.StatusOK)
 }
 
-func QueryProfilesByTag(ctx *gin.Context) {
+type Users struct {
+	Users []Profile
+}
 
+func QueryProfilesByTag(ctx *gin.Context) {
+	tag := ctx.Param("tag")
+	uuids, err := database.FindUsersForTag(tag)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't query users by tag from database:", err)
+		return
+	}
+	users := Users{Users: []Profile{}}
+	for _, v := range uuids {
+		profile, err := database.FindProfileByID(v)
+		if err == nil {
+			age := GetAge(profile.BirthDate)
+			if age < 0 {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("User", v, "has invalid birthdate")
+				return
+			}
+
+			resultProfile := Profile{
+				ID: profile.User,
+				FirstName: profile.FirstName,
+				LastName:  profile.LastName,
+				Age:       age,
+				Bio:       profile.Bio,
+				Pictures:  []PictureID{},
+				Tags:      []string{},
+			}
+
+			pictures, err := database.GetPicturesForUser(v)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("Failed to request profile pictures from database:", err)
+				return
+			}
+			for _, v := range pictures {
+				resultProfile.Pictures = append(resultProfile.Pictures, PictureID{
+					ID:        v.UUID,
+					IsPrimary: v.IsPrimary,
+				})
+			}
+
+			tags, err := database.GetTagsForUser(v)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("Failed to request tags from database:", err)
+				return
+			}
+			for _, v := range tags {
+				resultProfile.Tags = append(resultProfile.Tags, v.Tag)
+			}
+			users.Users = append(users.Users, resultProfile)
+		} else if err == sql.ErrNoRows {
+			log.Println("User", v, "doesn't have a profile, yet has tags")
+		} else {
+			log.Println("Cannot obtain profile from database:", err)
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			return
+		}
+	}
+	ctx.JSON(http.StatusOK, users)
 }
 
 func QueryProfileByID(ctx *gin.Context) {
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	profile, err := database.FindProfileByID(id)
+	if err == nil {
+		age := GetAge(profile.BirthDate)
+		if age < 0 {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("User", id, "has invalid birthdate")
+			return
+		}
 
+		resultProfile := Profile{
+			ID: profile.User,
+			FirstName: profile.FirstName,
+			LastName:  profile.LastName,
+			Age:       age,
+			Bio:       profile.Bio,
+			Pictures:  []PictureID{},
+			Tags:      []string{},
+		}
+
+		pictures, err := database.GetPicturesForUser(id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Failed to request profile pictures from database:", err)
+			return
+		}
+		for _, v := range pictures {
+			resultProfile.Pictures = append(resultProfile.Pictures, PictureID{
+				ID:        v.UUID,
+				IsPrimary: v.IsPrimary,
+			})
+		}
+
+		tags, err := database.GetTagsForUser(id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Failed to request tags from database:", err)
+			return
+		}
+		for _, v := range tags {
+			resultProfile.Tags = append(resultProfile.Tags, v.Tag)
+		}
+		ctx.JSON(http.StatusOK, resultProfile)
+	} else if err == sql.ErrNoRows {
+		ctx.JSON(http.StatusNotFound, InvalidID)
+	} else {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't request user profile from database:", err)
+	}
 }
 
 func GetMatches(ctx *gin.Context) {
@@ -440,7 +558,7 @@ func GetImage(ctx *gin.Context) {
 	}
 	pic, err := database.GetPictureByID(id)
 	if err == sql.ErrNoRows {
-		ctx.JSON(http.StatusBadRequest, InvalidID)
+		ctx.JSON(http.StatusNotFound, InvalidID)
 		return
 	} else if err != nil {
 		ctx.JSON(http.StatusInternalServerError, InternalServerError)

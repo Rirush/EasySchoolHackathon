@@ -31,8 +31,8 @@ func main() {
 	r.POST("/profile/me/picture/:id/primary", Secure, SetImageAsPrimary) // done
 
 	// Profile queries:
-	r.GET("/profiles/tag/:tag", Secure, QueryProfilesByTag)
-	r.GET("/profile/id/:id", Secure, QueryProfileByID)
+	r.GET("/profiles/tag/:tag", Secure, QueryProfilesByTag) // done
+	r.GET("/profile/id/:id", Secure, QueryProfileByID) // done
 
 	// Tinder-like functionality:
 	r.GET("/matches", Secure, GetMatches)
