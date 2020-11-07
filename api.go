@@ -769,20 +769,130 @@ func GetTagDetails(ctx *gin.Context) {
 
 }
 
-func GetCommunityPosts(ctx *gin.Context) {
+type Post struct {
+	Sender uuid.UUID
+	Text string
+}
 
+type Posts struct {
+	Posts []Post
+}
+
+func GetCommunityPosts(ctx *gin.Context) {
+	tag := ctx.Param("tag")
+	posts, err := database.GetPostsForTag(tag)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Failed to request posts from database:", err)
+		return
+	}
+	res := &Posts{}
+	for _, v := range posts {
+		res.Posts = append(res.Posts, Post{
+			Sender: v.Sender,
+			Text:   v.Contents,
+		})
+	}
+	ctx.JSON(http.StatusOK, res)
+}
+
+type NewPost struct {
+	Contents string
 }
 
 func PostToCommunity(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	tag := ctx.Param("tag")
+	form := &NewPost{}
+	err := ctx.BindJSON(form)
+	if err != nil {
+		log.Println("Failed to bind JSON:", err)
+		ctx.JSON(http.StatusUnprocessableEntity, BodyParseFailed)
+		return
+	}
+	post := &database.Post{
+		Tag: tag,
+		Sender: user,
+		Contents: form.Contents,
+	}
+	err = post.Insert()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Failed to insert post into database:", err)
+		return
+	}
+	ctx.Status(http.StatusOK)
+}
 
+type Message struct {
+	Sender uuid.UUID
+	Target uuid.UUID
+	Text string
+}
+
+type Messages struct {
+	Messages []Message
 }
 
 func QueryDirectMessages(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	messages, err := database.GetMessagesInConversation(user, id)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Failed to get messages from database:", err)
+		return
+	}
+	res := Messages{}
+	for _, v := range messages {
+		res.Messages = append(res.Messages, Message{
+			Sender: v.Sender,
+			Target: v.Target,
+			Text:   v.Contents,
+		})
+	}
+	ctx.JSON(http.StatusOK, res)
+}
 
+type MessageText struct {
+	Text string
 }
 
 func SendDirectMessage(ctx *gin.Context) {
-
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	form := &MessageText{}
+	err = ctx.BindJSON(form)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, BodyParseFailed)
+		log.Println("Body parse failed:", err)
+		return
+	}
+	message := database.Message{
+		Sender:   user,
+		Target:   id,
+		Contents: form.Text,
+	}
+	err = message.Insert()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Failed to insert message into database:", err)
+		return
+	}
+	ctx.Status(http.StatusOK)
 }
 
 func OpenWebsocket(ctx *gin.Context) {

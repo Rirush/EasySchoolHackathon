@@ -41,19 +41,19 @@ func main() {
 	r.GET("/matched", Secure, GetMatched) // done
 
 	// Tag discovery:
-	r.GET("/tags", Secure, GetTags)
-	r.GET("/tag/:tag", Secure, GetTagDetails)
+	r.GET("/tags", Secure, GetTags) // ???
+	r.GET("/tag/:tag", Secure, GetTagDetails) // ???
 
 	// Community actions:
-	r.GET("/community/:tag", Secure, GetCommunityPosts)
-	r.POST("/community/:tag", Secure, PostToCommunity)
+	r.GET("/community/:tag", Secure, GetCommunityPosts) // done
+	r.POST("/community/:tag", Secure, PostToCommunity) // done
 
 	// Direct messages:
-	r.GET("/dm/:id", Secure, QueryDirectMessages)
-	r.POST("/dm/:id", Secure, SendDirectMessage)
+	r.GET("/dm/:id", Secure, QueryDirectMessages) // done
+	r.POST("/dm/:id", Secure, SendDirectMessage) // done
 
 	// Server-side notification channel:
-	r.GET("/ws", Secure, OpenWebsocket)
+	r.GET("/ws", Secure, OpenWebsocket) // no
 
 	// Image requesting:
 	r.GET("/image/:id", Secure, GetImage)  // done

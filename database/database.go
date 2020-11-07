@@ -49,6 +49,18 @@ CREATE TABLE IF NOT EXISTS matches (
     matcher text references credentials not null,
     matchee text references credentials not null,
     likes boolean not null
+);
+
+CREATE TABLE IF NOT EXISTS posts (
+    sender text references credentials not null,
+    contents text not null,
+    tag text not null
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    sender text references credentials not null,
+    target text references credentials not null,
+    contents text not null
 )
 `
 
@@ -292,6 +304,66 @@ func FindMatchesForMatchee(matchee uuid.UUID) ([]*Match, error) {
 		matches = append(matches, match)
 	}
 	return matches, nil
+}
+
+type Post struct {
+	Sender uuid.UUID
+	Contents string
+	Tag string
+}
+
+func (p *Post) Insert() error {
+	_, err := db.NamedExec("INSERT INTO posts VALUES (:sender, :contents, :tag)", *p)
+	return err
+}
+
+func GetPostsForTag(tag string) ([]*Post, error) {
+	rows, err := db.Queryx("SELECT * FROM posts WHERE tag = ?", tag)
+	if err == sql.ErrNoRows {
+		return []*Post{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var result []*Post
+	for rows.Next() {
+		post := &Post{}
+		err = rows.StructScan(post)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, post)
+	}
+	return result, nil
+}
+
+type Message struct {
+	Sender uuid.UUID
+	Target uuid.UUID
+	Contents string
+}
+
+func (m *Message) Insert() error {
+	_, err := db.NamedExec("INSERT INTO messages VALUES (:sender, :target, :contents)", *m)
+	return err
+}
+
+func GetMessagesInConversation(a, b uuid.UUID) ([]*Message, error) {
+	rows, err := db.Queryx("SELECT * FROM messages WHERE (sender = ? AND target = ?) OR (sender = ? AND target = ?)", a, b, b, a)
+	if err == sql.ErrNoRows {
+		return []*Message{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var res []*Message
+	for rows.Next() {
+		message := &Message{}
+		err := rows.StructScan(message)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, message)
+	}
+	return res, nil
 }
 
 func LoadDatabase(path string) error {
