@@ -35,9 +35,10 @@ func main() {
 	r.GET("/profile/id/:id", Secure, QueryProfileByID) // done
 
 	// Tinder-like functionality:
-	r.GET("/matches", Secure, GetMatches)
-	r.POST("/match/discard/:id", Secure, DiscardMatch)
-	r.POST("/match/accept/:id", Secure, AcceptMatch)
+	r.GET("/matches", Secure, GetMatches) // done
+	r.POST("/match/discard/:id", Secure, DiscardMatch) // done
+	r.POST("/match/accept/:id", Secure, AcceptMatch) // done
+	r.GET("/matched", Secure, GetMatched) // done
 
 	// Tag discovery:
 	r.GET("/tags", Secure, GetTags)

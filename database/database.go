@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS profile_pictures (
 CREATE TABLE IF NOT EXISTS tags (
     tag text not null,
     user text references credentials not null
+);
+
+CREATE TABLE IF NOT EXISTS matches (
+    matcher text references credentials not null,
+    matchee text references credentials not null,
+    likes boolean not null
 )
 `
 
@@ -249,6 +255,43 @@ func FindUsersForTag(tag string) ([]uuid.UUID, error) {
 		result = append(result, user)
 	}
 	return result, nil
+}
+
+type Match struct {
+	Matcher uuid.UUID
+	Matchee uuid.UUID
+	Likes bool
+}
+
+func (m *Match) Insert() error {
+	_, err := db.NamedExec("INSERT INTO matches VALUES (:matcher, :matchee, :likes)", *m)
+	return err
+}
+
+func FindMatch(matcher, matchee uuid.UUID) (*Match, error) {
+	row := db.QueryRowx("SELECT DISTINCT(matcher), matchee FROM matches WHERE matcher = ? AND matchee = ?", matcher, matchee)
+	match := &Match{}
+	err := row.StructScan(match)
+	return match, err
+}
+
+func FindMatchesForMatchee(matchee uuid.UUID) ([]*Match, error) {
+	rows, err := db.Queryx("SELECT * FROM matches WHERE matchee = ? AND likes = true", matchee)
+	if err == sql.ErrNoRows {
+		return []*Match{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var matches []*Match
+	for rows.Next() {
+		match := &Match{}
+		err := rows.StructScan(match)
+		if err != nil {
+			return nil, err
+		}
+		matches = append(matches, match)
+	}
+	return matches, nil
 }
 
 func LoadDatabase(path string) error {

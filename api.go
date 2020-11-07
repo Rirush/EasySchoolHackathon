@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -509,16 +510,255 @@ func QueryProfileByID(ctx *gin.Context) {
 	}
 }
 
-func GetMatches(ctx *gin.Context) {
+type Recommendation struct {
+	ID uuid.UUID
+	Overlaps uint
+}
 
+func GetMatches(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	tags, err := database.GetTagsForUser(user)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Failed to request tags from database:", err)
+		return
+	}
+	usersMap := make(map[uuid.UUID]uint)
+	for _, v := range tags {
+		users, err := database.FindUsersForTag(v.Tag)
+		if err == sql.ErrNoRows {
+			continue
+		} else if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Couldn't request users from database:", err)
+			return
+		}
+		for _, u := range users {
+			_, err := database.FindMatch(user, u)
+			if err == sql.ErrNoRows {
+				if u == user {
+					continue
+				}
+				usersMap[u]++
+			} else if err != nil {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("Failed obtaining match from database:", err)
+				return
+			}
+		}
+	}
+	var recommendations []Recommendation
+	for k, v := range usersMap {
+		recommendations = append(recommendations, Recommendation{
+			ID: k,
+			Overlaps: v,
+		})
+	}
+	sort.Slice(recommendations, func(i, j int) bool {
+		return recommendations[i].Overlaps > recommendations[j].Overlaps
+	})
+	users := Users{Users: []Profile{}}
+	for _, v := range recommendations {
+		profile, err := database.FindProfileByID(v.ID)
+		if err == nil {
+			age := GetAge(profile.BirthDate)
+			if age < 0 {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("User", v, "has invalid birthdate")
+				return
+			}
+
+			resultProfile := Profile{
+				ID: profile.User,
+				FirstName: profile.FirstName,
+				LastName:  profile.LastName,
+				Age:       age,
+				Bio:       profile.Bio,
+				Pictures:  []PictureID{},
+				Tags:      []string{},
+			}
+
+			pictures, err := database.GetPicturesForUser(v.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("Failed to request profile pictures from database:", err)
+				return
+			}
+			for _, v := range pictures {
+				resultProfile.Pictures = append(resultProfile.Pictures, PictureID{
+					ID:        v.UUID,
+					IsPrimary: v.IsPrimary,
+				})
+			}
+
+			tags, err := database.GetTagsForUser(v.ID)
+			if err != nil {
+				ctx.JSON(http.StatusInternalServerError, InternalServerError)
+				log.Println("Failed to request tags from database:", err)
+				return
+			}
+			for _, v := range tags {
+				resultProfile.Tags = append(resultProfile.Tags, v.Tag)
+			}
+			users.Users = append(users.Users, resultProfile)
+		} else if err == sql.ErrNoRows {
+			log.Println("User", v, "doesn't have a profile, yet has tags")
+		} else {
+			log.Println("Cannot obtain profile from database:", err)
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			return
+		}
+	}
+	ctx.JSON(http.StatusOK, users)
 }
 
 func DiscardMatch(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	match := database.Match{
+		Matcher: user,
+		Matchee: id,
+		Likes: false,
+	}
+	err = match.Insert()
+	if err != nil {
+		log.Println("Cannot insert match into database:", err)
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		return
+	}
+	ctx.Status(http.StatusOK)
+}
 
+type Matched struct {
+	Matched bool
 }
 
 func AcceptMatch(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	match := database.Match{
+		Matcher: user,
+		Matchee: id,
+		Likes: true,
+	}
+	err = match.Insert()
+	if err != nil {
+		log.Println("Cannot insert match into database:", err)
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		return
+	}
+	m, err := database.FindMatch(id, user)
+	if err == sql.ErrNoRows {
+		ctx.JSON(http.StatusOK, Matched{false})
+	} else if err != nil {
+		log.Println("Cannot find match in database:", err)
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		return
+	} else {
+		if m.Likes {
+			ctx.JSON(http.StatusOK, Matched{true})
+		} else {
+			ctx.JSON(http.StatusOK, Matched{false})
+		}
+	}
+}
 
+type Matches struct {
+	Mutual []Profile
+	Incoming []Profile
+}
+
+func GetMatched(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	matches, err := database.FindMatchesForMatchee(user)
+	if err != nil {
+		log.Println("Cannot find matches in database:", err)
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		return
+	}
+	res := Matches{
+		Mutual: []Profile{},
+		Incoming: []Profile{},
+	}
+	for _, v := range matches {
+		if v.Matcher == v.Matchee {
+			continue
+		}
+		matchBack, err := database.FindMatch(user, v.Matcher)
+		if err != nil && err != sql.ErrNoRows {
+			log.Println("Cannot find match in database:", err)
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			return
+		}
+		notMatched := err == sql.ErrNoRows
+		profile, err := database.FindProfileByID(v.Matcher)
+		if err == sql.ErrNoRows {
+			continue
+		} else if err != nil {
+			log.Println("Cannot find profile in database:", err)
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			return
+		}
+		age := GetAge(profile.BirthDate)
+		if age < 0 {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("User", v, "has invalid birthdate")
+			return
+		}
+
+		resultProfile := Profile{
+			ID:        profile.User,
+			FirstName: profile.FirstName,
+			LastName:  profile.LastName,
+			Age:       age,
+			Bio:       profile.Bio,
+			Pictures:  []PictureID{},
+			Tags:      []string{},
+		}
+
+		pictures, err := database.GetPicturesForUser(v.Matcher)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Failed to request profile pictures from database:", err)
+			return
+		}
+		for _, v := range pictures {
+			resultProfile.Pictures = append(resultProfile.Pictures, PictureID{
+				ID:        v.UUID,
+				IsPrimary: v.IsPrimary,
+			})
+		}
+
+		tags, err := database.GetTagsForUser(v.Matcher)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Failed to request tags from database:", err)
+			return
+		}
+		for _, v := range tags {
+			resultProfile.Tags = append(resultProfile.Tags, v.Tag)
+		}
+		if notMatched {
+			res.Incoming = append(res.Incoming, resultProfile)
+		} else if matchBack.Likes {
+			res.Mutual = append(res.Mutual, resultProfile)
+		}
+	}
+	ctx.JSON(http.StatusOK, res)
 }
 
 func GetTags(ctx *gin.Context) {
