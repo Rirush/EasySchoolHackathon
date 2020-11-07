@@ -45,6 +45,14 @@ var (
 		Code: "INVALID_BIRTHDATE",
 		Description: "Provided birthdate is invalid",
 	}
+	ImageTooBig = Error{
+		Code: "IMAGE_TOO_BIG",
+		Description: "Provided image is too big, current size limit is 10 MB",
+	}
+	InvalidID = Error{
+		Code: "INVALID_ID",
+		Description: "Provided ID is invalid",
+	}
 )
 
 type Error struct {

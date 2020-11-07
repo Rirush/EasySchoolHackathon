@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS profile_pictures (
     uuid text primary key not null,
     user text references credentials not null,
     data blob not null,
-    isPrimary boolean not null
+    is_primary boolean not null
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -124,13 +124,45 @@ type ProfilePicture struct {
 	UUID uuid.UUID
 	User uuid.UUID
 	Data []byte
-	IsPrimary bool
+	IsPrimary bool `db:"is_primary"`
 }
 
 func (p *ProfilePicture) Insert() error {
 	p.UUID = uuid.New()
 	_, err := db.NamedExec("INSERT INTO profile_pictures VALUES (:uuid, :user, :data, :is_primary)", *p)
 	return err
+}
+
+func (p *ProfilePicture) Delete() error {
+	_, err := db.NamedExec("DELETE FROM profile_pictures WHERE uuid = :uuid", *p)
+	return err
+}
+
+func (p *ProfilePicture) SetPrimary() error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec("UPDATE profile_pictures SET is_primary = false WHERE user = ?", p.User)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	_, err = tx.Exec("UPDATE profile_pictures SET is_primary = true WHERE uuid = ?", p.UUID)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	p.IsPrimary = true
+	err = tx.Commit()
+	return err
+}
+
+func GetPictureByID(id uuid.UUID) (*ProfilePicture, error) {
+	row := db.QueryRowx("SELECT * FROM profile_pictures WHERE uuid = ?", id)
+	pic := &ProfilePicture{}
+	err := row.StructScan(pic)
+	return pic, err
 }
 
 func GetPicturesForUser(user uuid.UUID) ([]*ProfilePicture, error) {
@@ -158,7 +190,7 @@ type Tag struct {
 }
 
 func GetTagsForUser(user uuid.UUID) ([]*Tag, error) {
-	rows, err := db.Queryx("SELECT * FROM tags WHERE user = ?", user)
+	rows, err := db.Queryx("SELECT DISTINCT(tag), user FROM tags WHERE user = ?", user)
 	if err == sql.ErrNoRows {
 		return []*Tag{}, nil
 	} else if err != nil {
@@ -174,6 +206,28 @@ func GetTagsForUser(user uuid.UUID) ([]*Tag, error) {
 		tags = append(tags, tag)
 	}
 	return tags, nil
+}
+
+func SetTagsForUser(user uuid.UUID, tags []string) error {
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec("DELETE FROM tags WHERE user = ?", user)
+	if err != nil {
+		// if this fails, we're screwed
+		_ = tx.Rollback()
+		return err
+	}
+	for _, tag := range tags {
+		_, err = tx.Exec("INSERT INTO tags VALUES (?, ?)", tag, user)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	err = tx.Commit()
+	return err
 }
 
 func LoadDatabase(path string) error {

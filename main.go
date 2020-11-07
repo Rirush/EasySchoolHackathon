@@ -23,12 +23,12 @@ func main() {
 	r.POST("/authorize", Authorize) // done
 
 	// Current profile management:
-	r.GET("/profile/me", Secure, GetMyProfile)
-	r.POST("/profile/me", Secure, PostProfile)
-	r.POST("/profile/me/tags", Secure, PostTags)
-	r.POST("/profile/me/picture", Secure, PostImage)
-	r.DELETE("/profile/me/picture/:id", Secure, DeleteImage)
-	r.POST("/profile/me/picture/:id/primary", Secure, SetImageAsPrimary)
+	r.GET("/profile/me", Secure, GetMyProfile) // done
+	r.POST("/profile/me", Secure, PostProfile) // done
+	r.POST("/profile/me/tags", Secure, PostTags) // done
+	r.POST("/profile/me/picture", Secure, PostImage) // done
+	r.DELETE("/profile/me/picture/:id", Secure, DeleteImage) // done
+	r.POST("/profile/me/picture/:id/primary", Secure, SetImageAsPrimary) // done
 
 	// Profile queries:
 	r.GET("/profiles/tag/:tag", Secure, QueryProfilesByTag)
@@ -55,7 +55,7 @@ func main() {
 	r.GET("/ws", Secure, OpenWebsocket)
 
 	// Image requesting:
-	r.GET("/image/:id", Secure, GetImage)
+	r.GET("/image/:id", Secure, GetImage)  // done
 
 	go r.Run()
 	sig := make(chan os.Signal)

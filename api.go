@@ -228,20 +228,154 @@ func PostProfile(ctx *gin.Context) {
 	}
 }
 
-func PostTags(ctx *gin.Context) {
+type NewTags struct {
+	Tags []string
+}
 
+func PostTags(ctx *gin.Context) {
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	form := NewTags{}
+	err := ctx.BindJSON(&form)
+	if err != nil {
+		log.Println("Failed to bind JSON:", err)
+		ctx.JSON(http.StatusUnprocessableEntity, BodyParseFailed)
+		return
+	}
+	err = database.SetTagsForUser(user, form.Tags)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't set tags for user:", err)
+		return
+	}
+	ctx.Status(http.StatusOK)
+}
+
+type Image struct {
+	Data []byte
+}
+
+type ImageSuccess struct {
+	ID uuid.UUID
 }
 
 func PostImage(ctx *gin.Context) {
-
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	form := Image{}
+	err := ctx.BindJSON(&form)
+	if err != nil {
+		log.Println("Failed to bind JSON:", err)
+		ctx.JSON(http.StatusUnprocessableEntity, BodyParseFailed)
+		return
+	}
+	if len(form.Data) > 10 * 1024 * 1024 {
+		ctx.JSON(http.StatusBadRequest, ImageTooBig)
+		return
+	}
+	p, err := database.GetPicturesForUser(user)
+	image := database.ProfilePicture{
+		User:      user,
+		Data:      form.Data,
+		IsPrimary: false,
+	}
+	// it must return as error
+	// yet it doesn't. how
+	if len(p) == 0 && (err == nil || err == sql.ErrNoRows) {
+		image.IsPrimary = true
+	} else if err != nil && err != sql.ErrNoRows {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't obtain images from database:", err)
+		return
+	}
+	err = image.Insert()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't insert image into database:", err)
+		return
+	}
+	ctx.JSON(http.StatusOK, ImageSuccess{
+		ID: image.UUID,
+	})
 }
 
 func DeleteImage(ctx *gin.Context) {
-
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	pic, err := database.GetPictureByID(id)
+	if err == sql.ErrNoRows {
+		ctx.JSON(http.StatusBadRequest, InvalidID)
+		return
+	} else if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't query image from database:", err)
+		return
+	}
+	if pic.User != user {
+		ctx.JSON(http.StatusBadRequest, InvalidID)
+		return
+	}
+	err = pic.Delete()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't delete image from database:", err)
+		return
+	}
+	if pic.IsPrimary {
+		pics, err := database.GetPicturesForUser(user)
+		if err == sql.ErrNoRows {
+			ctx.Status(http.StatusOK)
+			return
+		} else if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Couldn't get images from database:", err)
+			return
+		}
+		err = pics[0].SetPrimary()
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, InternalServerError)
+			log.Println("Couldn't set image as primary in database:", err)
+			return
+		}
+	}
+	ctx.Status(http.StatusOK)
 }
 
 func SetImageAsPrimary(ctx *gin.Context) {
-
+	_user, _ := ctx.Get("UserID")
+	user := _user.(uuid.UUID)
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	pic, err := database.GetPictureByID(id)
+	if err == sql.ErrNoRows {
+		ctx.JSON(http.StatusBadRequest, InvalidID)
+		return
+	} else if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't query image from database:", err)
+		return
+	}
+	if pic.User != user {
+		ctx.JSON(http.StatusBadRequest, InvalidID)
+		return
+	}
+	err = pic.SetPrimary()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't set image as primary in database:", err)
+		return
+	}
+	ctx.Status(http.StatusOK)
 }
 
 func QueryProfilesByTag(ctx *gin.Context) {
@@ -293,5 +427,20 @@ func OpenWebsocket(ctx *gin.Context) {
 }
 
 func GetImage(ctx *gin.Context) {
-
+	_id := ctx.Param("id")
+	id, err := uuid.Parse(_id)
+	if err != nil {
+		ctx.JSON(http.StatusUnprocessableEntity, InvalidID)
+		return
+	}
+	pic, err := database.GetPictureByID(id)
+	if err == sql.ErrNoRows {
+		ctx.JSON(http.StatusBadRequest, InvalidID)
+		return
+	} else if err != nil {
+		ctx.JSON(http.StatusInternalServerError, InternalServerError)
+		log.Println("Couldn't query image from database:", err)
+		return
+	}
+	ctx.JSON(http.StatusOK, Image{Data: pic.Data})
 }
